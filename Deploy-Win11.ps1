@@ -1,9 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$OSName      = "Windows 11 23H2 x64",
-    [string]$OSEdition   = "Pro",
+    [string]$OSName       = "Windows 11 24H2 x64",
+    [string]$OSEdition    = "Pro",
     [string]$OSActivation = "Retail",
-    [string]$OSLanguage  = "en-us"
+    [string]$OSLanguage   = "en-us"
 )
 
 $ScriptName = 'Michaelhanson.dev'
@@ -50,7 +50,7 @@ Write-Host -ForegroundColor Green "[+] Enabling TLS 1.2"
 #region WinPE
 if ($WindowsPhase -eq 'WinPE') {
     Invoke-Expression -Command (Invoke-RestMethod -Uri functions.osdcloud.com)
-    osdcloud-StartWinPE -OSDCloud
+    #osdcloud-StartWinPE -OSDCloud
 
     Write-Host -ForegroundColor Cyan "To start a new PowerShell session, type 'start powershell' and press enter"
     Write-Host -ForegroundColor Cyan "Start-OSDCloud, Start-OSDCloudGUI, or Start-OSDCloudAzure, can be run in the new PowerShell window"

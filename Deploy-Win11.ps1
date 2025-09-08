@@ -10,7 +10,7 @@ $OSActivation = 'Volume'
 $OSLanguage = 'en-us'
 
 
-Used to Determine Driver Pack
+#Used to Determine Driver Pack
 $DriverPack = Get-OSDCloudDriverPack -Product $Product -OSVersion $OSVersion -OSReleaseID $OSReleaseID
 
 if ($DriverPack){

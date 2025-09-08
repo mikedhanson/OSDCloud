@@ -6,12 +6,16 @@ param(
     [string]$OSLanguage  = "en-us"
 )
 
-$ScriptName = 'Michael.Hanson.dev'
+$ScriptName = 'Michaelhanson.dev'
 $ScriptVersion = '1.0.2'
+
+write-host "os name: $OSName"
+
+read-host "Brfeak here" 
 
 #region Initialize
 $Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-$ScriptName.log"
-$null = Start-Transcript -Path (Join-Path "$env:SystemRoot\Temp" $Transcript) -ErrorAction Ignore
+$null = Start-Transcript -Path (Join-Path "$env:SystemRoot\Temp" $Transcript) #-ErrorAction Ignore
 
 if ($env:SystemDrive -eq 'X:') {
     $WindowsPhase = 'WinPE'

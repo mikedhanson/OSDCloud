@@ -41,7 +41,9 @@ Write-Host -ForegroundColor Green "[+] Transport Layer Security (TLS) 1.2"
 #region WinPE
 if ($WindowsPhase -eq 'WinPE') {
     #Process OSDCloud startup and load Azure KeyVault dependencies
+    Invoke-Expression -Command (Invoke-RestMethod -Uri functions.osdcloud.com)
     osdcloud-StartWinPE -OSDCloud #-KeyVault
+    
     Write-Host -ForegroundColor Cyan "To start a new PowerShell session, type 'start powershell' and press enter"
     Write-Host -ForegroundColor Cyan "Start-OSDCloud, Start-OSDCloudGUI, or Start-OSDCloudAzure, can be run in the new PowerShell window"
 

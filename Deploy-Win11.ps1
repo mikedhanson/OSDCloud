@@ -1,7 +1,10 @@
-[CmdletBinding()]
-param()
+#@[CmdletBinding()]
+#param()
+
 $ScriptName = 'Michael.Hanson.dev'
 $ScriptVersion = '1.0.1'
+
+read-host "break"
 
 #region Initialize
 $Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-$ScriptName.log"

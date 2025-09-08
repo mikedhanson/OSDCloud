@@ -1,10 +1,13 @@
-#@[CmdletBinding()]
-#param()
+[CmdletBinding()]
+param(
+    [string]$OSName      = "Windows 11 23H2 x64",
+    [string]$OSEdition   = "Pro",
+    [string]$OSActivation = "Retail",
+    [string]$OSLanguage  = "en-us"
+)
 
 $ScriptName = 'Michael.Hanson.dev'
-$ScriptVersion = '1.0.1'
-
-read-host "break"
+$ScriptVersion = '1.0.2'
 
 #region Initialize
 $Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-$ScriptName.log"
@@ -35,100 +38,66 @@ else {
 }
 #endregion
 
-#region Transport Layer Security (TLS) 1.2
-Write-Host -ForegroundColor Green "[+] Transport Layer Security (TLS) 1.2"
+#region TLS
+Write-Host -ForegroundColor Green "[+] Enabling TLS 1.2"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 #endregion
 
-
 #region WinPE
 if ($WindowsPhase -eq 'WinPE') {
-    #Process OSDCloud startup and load Azure KeyVault dependencies
     Invoke-Expression -Command (Invoke-RestMethod -Uri functions.osdcloud.com)
-    osdcloud-StartWinPE -OSDCloud #-KeyVault
-    
+    osdcloud-StartWinPE -OSDCloud
+
     Write-Host -ForegroundColor Cyan "To start a new PowerShell session, type 'start powershell' and press enter"
     Write-Host -ForegroundColor Cyan "Start-OSDCloud, Start-OSDCloudGUI, or Start-OSDCloudAzure, can be run in the new PowerShell window"
 
-        #Set OSDCloud Vars
+    # Global Vars for OSDCloud
     $Global:MyOSDCloud = [ordered]@{
-        Restart               = [bool]$False
-        RecoveryPartition     = [bool]$true
-        OEMActivation         = [bool]$True
-        WindowsUpdate         = [bool]$true
-        WindowsUpdateDrivers  = [bool]$true
-        WindowsDefenderUpdate = [bool]$true
-        SetTimeZone           = [bool]$true
-        ClearDiskConfirm      = [bool]$False
-        ShutdownSetupComplete = [bool]$false
-        SyncMSUpCatDriverUSB  = [bool]$true
-        CheckSHA1             = [bool]$true
+        Restart               = $false
+        RecoveryPartition     = $true
+        OEMActivation         = $true
+        WindowsUpdate         = $true
+        WindowsUpdateDrivers  = $true
+        WindowsDefenderUpdate = $true
+        SetTimeZone           = $true
+        ClearDiskConfirm      = $false
+        ShutdownSetupComplete = $false
+        SyncMSUpCatDriverUSB  = $true
+        CheckSHA1             = $true
     }
 
-    # cmdlet from osdCloud
     if (Test-HPIASupport) {
-        Write-Host "Detected HP Device, Enabling HPIA, HP BIOS and HP TPM Updates"
-        #$Global:MyOSDCloud.DevMode = [bool]$True
-        $Global:MyOSDCloud.HPTPMUpdate = [bool]$True
-        if ($Product -ne '83B2' -and $Model -notmatch "zbook") {
-            $Global:MyOSDCloud.HPIAALL = [bool]$true
-        }
-
-        #{$Global:MyOSDCloud.HPIAALL = [bool]$true}
-
-        $Global:MyOSDCloud.HPBIOSUpdate = [bool]$true
-
-        #$Global:MyOSDCloud.HPCMSLDriverPackLatest = [bool]$true #In Test 
-        #Set HP BIOS Settings to what I want:
-
-        Write-Host "Setting HP BIOS Settings"
-
-        #iex (irm https://raw.githubuserconten.tcom/gwblok/garytown/master/OSD/CloudOSD/Manage-HPBiosSettings.ps1)
-        #Manage-HPBiosSettings -SetSettings
-
+        Write-Host "Detected HP Device, enabling HPIA + BIOS/TPM updates"
+        $Global:MyOSDCloud.HPTPMUpdate = $true
+        $Global:MyOSDCloud.HPIAALL     = $true
+        $Global:MyOSDCloud.HPBIOSUpdate = $true
     }
 
-
-    #Launch OSDCloud
-    Write-Host "Starting OSDCloud" -ForegroundColor Green
-    write-host "Start-OSDCloud -OSName $OSName -OSEdition $OSEdition -OSActivation $OSActivation -OSLanguage $OSLanguage"
+    Write-Host "Starting OSDCloud with:" -ForegroundColor Green
+    Write-Host "   OSName: $OSName"
+    Write-Host "   OSEdition: $OSEdition"
+    Write-Host "   OSActivation: $OSActivation"
+    Write-Host "   OSLanguage: $OSLanguage"
 
     Start-OSDCloud -OSName $OSName -OSEdition $OSEdition -OSActivation $OSActivation -OSLanguage $OSLanguage
 
-    write-host "OSDCloud Complete" -ForegroundColor Green
-
-    #Reboot?
-
-    
-    #Stop the startup Transcript.  OSDCloud will create its own
+    Write-Host "OSDCloud Complete" -ForegroundColor Green
     $null = Stop-Transcript -ErrorAction Ignore
 }
 #endregion
 
 #region Specialize
-if ($WindowsPhase -eq 'Specialize') {
-    $null = Stop-Transcript -ErrorAction Ignore
-}
+if ($WindowsPhase -eq 'Specialize') { $null = Stop-Transcript -ErrorAction Ignore }
 #endregion
 
 #region AuditMode
-if ($WindowsPhase -eq 'AuditMode') {
-    $null = Stop-Transcript -ErrorAction Ignore
-}
+if ($WindowsPhase -eq 'AuditMode') { $null = Stop-Transcript -ErrorAction Ignore }
 #endregion
 
 #region OOBE
-if ($WindowsPhase -eq 'OOBE') {
-    #Load everything needed to run AutoPilot and Azure KeyVault
-    #osdcloud-StartOOBE -Display -Language -DateTime -Autopilot -KeyVault -InstallWinGet -WinGetUpgrade -WinGetPwsh
-        
-    $null = Stop-Transcript -ErrorAction Ignore
-}
+if ($WindowsPhase -eq 'OOBE') { $null = Stop-Transcript -ErrorAction Ignore }
 #endregion
 
 #region Windows
-if ($WindowsPhase -eq 'Windows') {
-    #Load OSD and Azure stuff
-    $null = Stop-Transcript -ErrorAction Ignore
-}
+if ($WindowsPhase -eq 'Windows') { $null = Stop-Transcript -ErrorAction Ignore }
 #endregion

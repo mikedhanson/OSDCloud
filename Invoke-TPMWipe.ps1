@@ -89,6 +89,9 @@ $LogFilePath = Join-Path "$env:SystemRoot\Temp" "TPM_CIM_Clear_Log.txt"
 $TpmNamespace = "ROOT\CIMV2\Security\MicrosoftTpm"
 $StartTime = Get-Date
 
+Write-Host "DIAG: TPM_SAS_TOKEN present=$(-not [string]::IsNullOrWhiteSpace($env:TPM_SAS_TOKEN)) len=$($env:TPM_SAS_TOKEN.Length)"
+Write-Host "DIAG: AzureSasToken param   present=$(-not [string]::IsNullOrWhiteSpace($AzureSasToken)) len=$($AzureSasToken.Length)"
+
 # Pull the device serial number from BIOS (Win32_BIOS).
 $DeviceSerialNumber = $null
 try {

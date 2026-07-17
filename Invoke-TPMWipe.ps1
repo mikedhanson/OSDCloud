@@ -50,6 +50,20 @@ param(
 
 #region OSDCloud Initialization & Environmental Checks
 $ScriptName = 'Clear-TPM-WinPE'
+
+# WinPE defaults to UTC. Set the OS timezone BEFORE Start-Transcript so
+# the transcript filename and every subsequent Get-Date reflect local
+# time (CST/CDT). tzutil is the reliable way in WinPE - Set-TimeZone
+# isn't always present.
+$TimeZoneId = 'Central Standard Time'   # Windows tz ID; observes DST.
+try {
+    & tzutil.exe /s $TimeZoneId | Out-Null
+    [System.TimeZoneInfo]::ClearCachedData()
+}
+catch {
+    Write-Warning "Could not set timezone to '$TimeZoneId': $($_.Exception.Message)"
+}
+
 $Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-$ScriptName.log"
 $TranscriptPath = Join-Path "$env:SystemRoot\Temp" $Transcript
 $null = Start-Transcript -Path $TranscriptPath -ErrorAction Ignore
@@ -478,10 +492,11 @@ $headline
 # On failure: open the logs in Notepad so the tech can review before the
 # WinPE session ends.
 if ($exitCode -eq 0) {
-    if ($TestMode) {
-        Write-Host "TestMode is ON - skipping shutdown. Exit code: $exitCode" -ForegroundColor Yellow
-    }
-    else {
+    #if ($TestMode) {
+    #    write-log "TestMode is ON - skipping shutdown. Exit code: $exitCode"
+    #    Write-Host "TestMode is ON - skipping shutdown. Exit code: $exitCode" -ForegroundColor Yellow
+    #}
+    #else {
         Write-Host "TPM clear succeeded. Shutting down in 10 seconds..." -ForegroundColor Green
         Start-Sleep -Seconds 10
         if ($WindowsPhase -eq 'WinPE') {
@@ -490,7 +505,7 @@ if ($exitCode -eq 0) {
         else {
             & shutdown.exe /s /f /t 0
         }
-    }
+    #}
 }
 else {
     Write-Host "TPM clear FAILED (exit $exitCode). Opening logs for review..." -ForegroundColor Red

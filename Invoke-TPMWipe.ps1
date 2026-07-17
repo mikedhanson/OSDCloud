@@ -60,10 +60,10 @@ if ($env:SystemDrive -eq 'X:') {
 }
 else {
     $ImageState = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State' -ErrorAction Ignore).ImageState
-    if ($env:UserName -eq 'defaultuser0') {$WindowsPhase = 'OOBE'}
-    elseif ($ImageState -eq 'IMAGE_STATE_SPECIALIZE_RESEAL_TO_OOBE') {$WindowsPhase = 'Specialize'}
-    elseif ($ImageState -eq 'IMAGE_STATE_SPECIALIZE_RESEAL_TO_AUDIT') {$WindowsPhase = 'AuditMode'}
-    else {$WindowsPhase = 'Windows'}
+    if ($env:UserName -eq 'defaultuser0') { $WindowsPhase = 'OOBE' }
+    elseif ($ImageState -eq 'IMAGE_STATE_SPECIALIZE_RESEAL_TO_OOBE') { $WindowsPhase = 'Specialize' }
+    elseif ($ImageState -eq 'IMAGE_STATE_SPECIALIZE_RESEAL_TO_AUDIT') { $WindowsPhase = 'AuditMode' }
+    else { $WindowsPhase = 'Windows' }
 }
 
 # Admin Elevation Check
@@ -143,6 +143,61 @@ function Write-Log {
     }
     else {
         Write-Host $LogMessage
+    }
+}
+
+function Sync-SystemTime {
+    <#
+        WinPE (and Hyper-V VMs) frequently boot with a badly skewed clock.
+        Azure Blob SAS auth rejects the request if the client clock is more
+        than 15 minutes off the SAS 'st'/'se' window, so we sync before any
+        Azure call. Uses the HTTP Date header of a well-known host - no
+        w32tm / domain time source required.
+    #>
+    [CmdletBinding()]
+    param(
+        [string[]]$Sources = @(
+            'https://raw.githubusercontent.com/',
+            'https://www.microsoft.com/',
+            'https://www.google.com/'
+        )
+    )
+    foreach ($src in $Sources) {
+        try {
+            $resp = Invoke-WebRequest -Uri $src -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            $dateStr = $resp.Headers['Date']
+            if ($dateStr -is [array]) { $dateStr = $dateStr[0] }
+            if ([string]::IsNullOrWhiteSpace($dateStr)) { continue }
+
+            $utc = [datetime]::Parse($dateStr, [Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+            $local = [System.TimeZoneInfo]::ConvertTimeFromUtc($utc, [System.TimeZoneInfo]::Local)
+            $before = Get-Date
+            Set-Date -Date $local -ErrorAction Stop | Out-Null
+            Write-Log "Clock synced from ${src}: was $before -> now $(Get-Date) (UTC $utc)"
+            return $true
+        }
+        catch {
+            Write-Log "Time sync via $src failed: $($_.Exception.Message)"
+        }
+    }
+    Write-Log "All time sources failed - clock left as-is. Azure SAS auth may fail." -IsError
+    return $false
+}
+
+function Test-SmtpReachable {
+    <#
+        Quick ICMP ping test. Note: some networks block ping but allow
+        SMTP on port 25 - if that's your environment, swap to a TCP
+        connect on $Port instead.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Server
+    )
+    try {
+        return [bool](Test-Connection -ComputerName $Server -Count 1 -Quiet -ErrorAction Stop)
+    }
+    catch {
+        return $false
     }
 }
 
@@ -277,6 +332,10 @@ try {
     Write-Log "User: $($LogData.UserDomain)\$($LogData.UserName)"
     Write-Log "========================================"
 
+    # Sync the system clock BEFORE any Azure call - SAS auth is
+    # time-sensitive and WinPE boots with a wildly wrong clock in VMs.
+    Sync-SystemTime | Out-Null
+
     # 1. Get TPM Instance
     Write-Log "Retrieving TPM instance from namespace: $TpmNamespace"
     $tpm = Get-CimInstance -Namespace $TpmNamespace -ClassName Win32_Tpm -ErrorAction Stop
@@ -403,7 +462,12 @@ $headline
 <pre>$([System.Net.WebUtility]::HtmlEncode($tpmDetails))</pre>
 "@
 
-        Send-WinPEAlert -Subject $emailSubject -Message $emailBody | Out-Null
+        if (Test-SmtpReachable -Server $SmtpServer) {
+            Send-WinPEAlert -Subject $emailSubject -Message $emailBody | Out-Null
+        }
+        else {
+            Write-Log "SMTP server '$SmtpServer' did not respond to ping - skipping email." -IsError
+        }
     }
     
     $null = Stop-Transcript -ErrorAction Ignore

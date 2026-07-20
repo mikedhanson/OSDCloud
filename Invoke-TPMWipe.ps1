@@ -45,7 +45,7 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]
-    $AlwaysSendEmail = $true
+    $AlwaysSendEmail = $false
 )
 
 #region OSDCloud Initialization & Environmental Checks
@@ -274,16 +274,16 @@ function Send-WinPEAlert {
         [Parameter()][string]  $LocalLogPath = "$env:SystemRoot\Temp\Clear-TPM-Alert.log"
     )
 
-    $taggedSubject = "[PSU-WINPE] $Subject".Trim()
+    $taggedSubject = "[WINPE] $Subject".Trim()
     $isHtml = $Message -match '<'
     $hostName = try { [System.Net.Dns]::GetHostName() } catch { $env:COMPUTERNAME }
     $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')
 
     $footer = if ($isHtml) {
-        "<hr/><p style='color:#888;font-size:smaller;'>Sent by <strong>PowerShell Universal (PSU)</strong> - WinPE Clear-TPM alert from <strong>$hostName</strong> (S/N $DeviceSerialNumber) at $stamp</p>"
+        "<hr/><p style='color:#888;font-size:smaller;'>Sent by <strong></strong> - WinPE Clear-TPM alert from <strong>$hostName</strong> (S/N $DeviceSerialNumber) at $stamp</p>"
     }
     else {
-        "`n`n----`nSent by PowerShell Universal (PSU) - WinPE Clear-TPM alert from $hostName (S/N $DeviceSerialNumber) at $stamp"
+        "`n`n----`nWinPE Clear-TPM alert from $hostName (S/N $DeviceSerialNumber) at $stamp"
     }
     $finalBody = "$Message$footer"
 

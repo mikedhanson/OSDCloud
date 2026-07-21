@@ -45,7 +45,7 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]
-    $AlwaysSendEmail = $false
+    $AlwaysSendEmail = $true
 )
 
 #region OSDCloud Initialization & Environmental Checks
@@ -101,7 +101,7 @@ if ([string]::IsNullOrWhiteSpace($AzureSasToken)) {
 
 $LogFilePath = Join-Path "$env:SystemRoot\Temp" "TPM_CIM_Clear_Log.txt"
 $TpmNamespace = "ROOT\CIMV2\Security\MicrosoftTpm"
-$StartTime = Get-Date
+$StartTime = (Get-Date).ToString("o")
 
 Write-Host "DIAG: TPM_SAS_TOKEN present=$(-not [string]::IsNullOrWhiteSpace($env:TPM_SAS_TOKEN)) len=$($env:TPM_SAS_TOKEN.Length)"
 Write-Host "DIAG: AzureSasToken param   present=$(-not [string]::IsNullOrWhiteSpace($AzureSasToken)) len=$($AzureSasToken.Length)"
@@ -274,16 +274,16 @@ function Send-WinPEAlert {
         [Parameter()][string]  $LocalLogPath = "$env:SystemRoot\Temp\Clear-TPM-Alert.log"
     )
 
-    $taggedSubject = "[WINPE] $Subject".Trim()
+    $taggedSubject = "[PSU-WINPE] $Subject".Trim()
     $isHtml = $Message -match '<'
     $hostName = try { [System.Net.Dns]::GetHostName() } catch { $env:COMPUTERNAME }
     $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')
 
     $footer = if ($isHtml) {
-        "<hr/><p style='color:#888;font-size:smaller;'>Sent by <strong></strong> - WinPE Clear-TPM alert from <strong>$hostName</strong> (S/N $DeviceSerialNumber) at $stamp</p>"
+        "<hr/><p style='color:#888;font-size:smaller;'>Sent by <strong>PowerShell Universal (PSU)</strong> - WinPE Clear-TPM alert from <strong>$hostName</strong> (S/N $DeviceSerialNumber) at $stamp</p>"
     }
     else {
-        "`n`n----`nWinPE Clear-TPM alert from $hostName (S/N $DeviceSerialNumber) at $stamp"
+        "`n`n----`nSent by PowerShell Universal (PSU) - WinPE Clear-TPM alert from $hostName (S/N $DeviceSerialNumber) at $stamp"
     }
     $finalBody = "$Message$footer"
 
@@ -355,12 +355,15 @@ try {
     $tpm = Get-CimInstance -Namespace $TpmNamespace -ClassName Win32_Tpm -ErrorAction Stop
 
     if (-not $tpm) {
-        Write-Log "No TPM instance found." -IsError
-        $LogData.Status = "FAILED"
-        $LogData.ErrorMessage = "No TPM instance found"
-        $null = Send-TpmResultToAzure -Data $LogData
-        $null = Stop-Transcript -ErrorAction Ignore
-        exit 1
+        # No TPM present on this device. Flag the run as NO_TPM and throw so
+        # we flow through the finally block (Azure upload + email) and the
+        # post-run action (open logs in Notepad for tech review) just like
+        # any other terminating failure.
+        $noTpmMsg = "No TPM instance found on this device (namespace: $TpmNamespace, class: Win32_Tpm). The device may not have a TPM, it may be disabled in firmware, or the WinPE image may be missing the TPM CIM provider."
+        Write-Log $noTpmMsg -IsError
+        $LogData.Status = "NO_TPM"
+        $LogData.ErrorMessage = $noTpmMsg
+        throw $noTpmMsg
     }
 
     # Capture TPM Information
@@ -413,8 +416,13 @@ try {
 }
 catch {
     Write-Log "Error: $_" -IsError
-    $LogData.Status = "EXCEPTION"
-    $LogData.ErrorMessage = $_.Exception.Message
+    # Don't clobber a status that a specific branch (e.g. NO_TPM) already set.
+    if ([string]::IsNullOrEmpty($LogData.Status)) {
+        $LogData.Status = "EXCEPTION"
+    }
+    if ([string]::IsNullOrEmpty($LogData.ErrorMessage)) {
+        $LogData.ErrorMessage = $_.Exception.Message
+    }
     $exitCode = 1
 }
 finally {
@@ -488,24 +496,55 @@ $headline
 }
 
 #region Post-Run Action ------------------------------------------------
-# On success: shut the machine down (unless TestMode).
-# On failure: open the logs in Notepad so the tech can review before the
-# WinPE session ends.
+# On success: shut the machine down.
+# On failure: open the logs in Notepad so the tech can review.
+Write-Host ""
+Write-Host "POST-RUN: exitCode=$exitCode  WindowsPhase=$WindowsPhase  TestMode=$TestMode" -ForegroundColor Cyan
+
 if ($exitCode -eq 0) {
-    #if ($TestMode) {
-    #    write-log "TestMode is ON - skipping shutdown. Exit code: $exitCode"
-    #    Write-Host "TestMode is ON - skipping shutdown. Exit code: $exitCode" -ForegroundColor Yellow
-    #}
-    #else {
-        Write-Host "TPM clear succeeded. Shutting down in 10 seconds..." -ForegroundColor Green
-        Start-Sleep -Seconds 10
-        if ($WindowsPhase -eq 'WinPE') {
+    Write-Host "TPM clear succeeded. Shutting down in 10 seconds..." -ForegroundColor Green
+    Start-Sleep -Seconds 10
+
+    $shutdownFired = $false
+
+    # Attempt 1: wpeutil (preferred in WinPE)
+    if ($WindowsPhase -eq 'WinPE') {
+        Write-Host "Calling: wpeutil.exe shutdown" -ForegroundColor Yellow
+        try {
             & wpeutil.exe shutdown
+            Write-Host "wpeutil.exe exit code: $LASTEXITCODE" -ForegroundColor Yellow
+            if ($LASTEXITCODE -eq 0) { $shutdownFired = $true }
         }
-        else {
+        catch {
+            Write-Warning "wpeutil.exe threw: $($_.Exception.Message)"
+        }
+    }
+
+    # Attempt 2: shutdown.exe (works in WinPE and full Windows)
+    if (-not $shutdownFired) {
+        Write-Host "Falling back to: shutdown.exe /s /f /t 0" -ForegroundColor Yellow
+        try {
             & shutdown.exe /s /f /t 0
+            Write-Host "shutdown.exe exit code: $LASTEXITCODE" -ForegroundColor Yellow
+            if ($LASTEXITCODE -eq 0) { $shutdownFired = $true }
         }
-    #}
+        catch {
+            Write-Warning "shutdown.exe threw: $($_.Exception.Message)"
+        }
+    }
+
+    # Attempt 3: PowerShell native (last resort)
+    if (-not $shutdownFired) {
+        Write-Host "Falling back to: Stop-Computer -Force" -ForegroundColor Yellow
+        try { Stop-Computer -Force -ErrorAction Stop } catch { Write-Warning "Stop-Computer threw: $($_.Exception.Message)" }
+    }
+
+    # Don't let PowerShell exit before the OS actually powers off - if we
+    # exit, startnet.cmd runs 'start PowerShell -NoL' and pops a fresh
+    # shell that makes it look like shutdown never happened. Hang here
+    # until the OS kills us.
+    Write-Host "Shutdown queued. Waiting for OS to power off..." -ForegroundColor Yellow
+    while ($true) { Start-Sleep -Seconds 30 }
 }
 else {
     Write-Host "TPM clear FAILED (exit $exitCode). Opening logs for review..." -ForegroundColor Red
